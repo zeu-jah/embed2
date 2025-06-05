@@ -1,0 +1,53 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/embed:latest', '.']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/embed:latest']
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'jobs'
+      - 'deploy'
+      - 'embed-top'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/embed:latest'
+      - '--region'
+      - 'europe-west9'
+      - '--memory'
+      - '4Gi'
+      - '--cpu'
+      - '2'
+      - '--task-timeout'
+      - '43200s'
+      - '--set-secrets'
+      - 'SECRETS_JSON=embed-secrets:latest'
+      - '--max-retries'
+      - '1'
+      - '--args=--category_type=top'
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'scheduler'
+      - 'jobs'
+      - 'create'
+      - 'http'
+      - 'embed-top-scheduler'
+      - '--schedule'
+      - '30 */6 * * *'
+      - '--uri'
+      - 'https://europe-west9-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/$PROJECT_ID/jobs/embed-top:run'
+      - '--http-method'
+      - 'POST'
+      - '--oauth-service-account-email'
+      - '$PROJECT_NUMBER-compute@developer.gserviceaccount.com'
+      - '--oauth-token-scope'
+      - 'https://www.googleapis.com/auth/cloud-platform'
+      - '--location'
+      - 'europe-west1'
+
+images:
+  - 'gcr.io/$PROJECT_ID/embed:latest' 
