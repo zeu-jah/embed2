@@ -20,3 +20,13 @@ CATEGORY_TYPES = [
     "dress",
     "suit",
 ]
+
+MAIN_CATEGORIES = [
+    "top",
+    "bottom",
+    "dress",
+    "accessories",
+]
+
+MAIN_CATEGORY_WEIGHT = 2
+OTHER_CATEGORY_WEIGHT = 1

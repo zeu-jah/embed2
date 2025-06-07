@@ -13,7 +13,7 @@ import src
 
 
 BATCH_SIZE = 128
-NUM_ITEMS = None
+NUM_ITEMS = 100000
 SHUFFLE_ALPHA = 0.3
 
 

@@ -39,8 +39,6 @@ def load_items_to_embed(
         category_type=category_type,
     )
 
-    print(query)
-
     return client.query(query).result()
 
 
@@ -76,13 +74,22 @@ def delete(client: bigquery.Client, table_id: str, conditions: List[str]) -> boo
     except Exception as e:
         print(e)
         return False
-
+    
 
 def _query_items_to_embed(
     shuffle: bool = False,
     n: Optional[int] = None,
     category_type: Optional[CategoryType] = None,
 ) -> str:
+    base_query = _build_base_query(category_type)
+
+    if category_type is not None:
+        return _build_single_category_query(base_query, shuffle, n)
+    else:
+        return _build_weighted_category_query(base_query, shuffle, n)
+
+
+def _build_base_query(category_type: Optional[CategoryType] = None) -> str:
     query = BASE_QUERY
 
     if category_type is not None:
@@ -93,6 +100,14 @@ def _query_items_to_embed(
         )
         query += f" AND category_type IN ({category_types})"
 
+    return query
+
+
+def _build_single_category_query(
+    base_query: str, shuffle: bool, n: Optional[int] = None
+) -> str:
+    query = base_query
+
     if shuffle:
         query += "\nORDER BY RAND()"
     else:
@@ -100,5 +115,53 @@ def _query_items_to_embed(
 
     if n is not None:
         query += f"\nLIMIT {n}"
+
+    return query
+
+
+def _calculate_category_limits(n: int) -> tuple[int, int]:
+    total_weight = (len(MAIN_CATEGORIES) * MAIN_CATEGORY_WEIGHT) + (
+        len(CATEGORY_TYPES) - len(MAIN_CATEGORIES)
+    ) * OTHER_CATEGORY_WEIGHT
+    items_per_weight = n // total_weight
+
+    main_category_limit = items_per_weight * MAIN_CATEGORY_WEIGHT
+    other_category_limit = items_per_weight * OTHER_CATEGORY_WEIGHT
+
+    return main_category_limit, other_category_limit
+
+
+def _build_weighted_category_query(
+    base_query: str, shuffle: bool, n: Optional[int] = None
+) -> str:
+    main_categories_str = ", ".join(f"'{cat}'" for cat in MAIN_CATEGORIES)
+
+    numbered_items_query = f"""
+    SELECT 
+    *,
+    ROW_NUMBER() OVER (
+        PARTITION BY category_type ORDER BY {'RAND()' if shuffle else 'created_at DESC'}
+    ) as row_num,
+    CASE 
+    WHEN category_type IN ({main_categories_str}) THEN {MAIN_CATEGORY_WEIGHT}
+    ELSE {OTHER_CATEGORY_WEIGHT}
+    END as category_weight
+    FROM base_items
+    """
+    
+    query = f"""
+    WITH 
+        base_items AS ({base_query}),
+        numbered_items AS ({numbered_items_query})
+    SELECT * EXCEPT(row_num, category_weight)
+    FROM numbered_items
+    """
+
+    if n is not None:
+        main_limit, other_limit = _calculate_category_limits(n)
+        query += f"""
+        WHERE (category_type IN ({main_categories_str}) AND row_num <= {main_limit})
+           OR (category_type NOT IN ({main_categories_str}) AND row_num <= {other_limit})
+        """
 
     return query
