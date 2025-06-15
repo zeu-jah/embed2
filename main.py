@@ -15,7 +15,7 @@ import src
 BATCH_SIZE = 128
 NUM_ITEMS = 100000
 SHUFFLE_ALPHA = 0.3
-CATALOG_SCORE_ALPHA = 1.0
+CATALOG_SCORE_ALPHA = .5
 
 
 def parse_args() -> src.models.CategoryType:
