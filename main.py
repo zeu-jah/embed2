@@ -15,6 +15,7 @@ import src
 BATCH_SIZE = 128
 NUM_ITEMS = 100000
 SHUFFLE_ALPHA = 0.3
+CATALOG_SCORE_ALPHA = 1.0
 
 
 def parse_args() -> src.models.CategoryType:
@@ -32,8 +33,16 @@ def get_gcp_credentials() -> Dict:
     return gcp_credentials
 
 
+def get_catalog_scores() -> List[int]:
+    if random.random() < CATALOG_SCORE_ALPHA:
+        return [1, 2, 3]
+
+    return [None]
+
+
 def get_dataloader(
-    category_type: Optional[src.models.CategoryType] = None
+    category_type: Optional[src.models.CategoryType] = None,
+    catalog_score: Optional[int] = None,
 ) -> bigquery.table.RowIterator:
     shuffle = random.random() < SHUFFLE_ALPHA
 
@@ -42,6 +51,7 @@ def get_dataloader(
         shuffle=shuffle,
         n=NUM_ITEMS,
         category_type=category_type,
+        catalog_score=catalog_score,
     )
 
 
@@ -99,69 +109,76 @@ def main(
     pinecone_index = pc_client.Index(src.enums.PINECONE_INDEX_NAME)
     encoder = src.encoder.FashionCLIPEncoder(normalize=True)
 
-    n_success, n = 0, 0
-    index, point_ids, images, payloads, to_delete_ids = [], [], [], [], []
+    for catalog_score in get_catalog_scores():
+        print(f"Catalog score: {catalog_score}")
 
-    loader = get_dataloader(category_type=category_type)
-    loop = tqdm.tqdm(iterable=loader, total=loader.total_rows)
+        n_success, n = 0, 0
+        index, point_ids, images, payloads, to_delete_ids = [], [], [], [], []
 
-    for row in loop:
-        row = dict(row)
-        vinted_id = row.get("vinted_id")
+        loader = get_dataloader(category_type, catalog_score)
+        loop = tqdm.tqdm(iterable=loader, total=loader.total_rows)
 
-        if vinted_id in index:
-            continue
+        for row in loop:
+            row = dict(row)
+            vinted_id = row.get("vinted_id")
 
-        index.append(vinted_id)
-        image_url = row.get("image_location")
-        image = src.utils.download_image_as_pil(url=image_url)
-
-        if isinstance(image, Image.Image):
-            point_id = str(uuid.uuid4())
-
-            images.append(image)
-            payloads.append(row)
-            point_ids.append(point_id)
-
-        else:
-            to_delete_ids.append(vinted_id)
-
-        if len(point_ids) > 0 and len(point_ids) % BATCH_SIZE == 0:
-            n += len(point_ids)
-
-            try:
-                embeddings = encoder.encode_images(images)
-            except Exception as e:
-                print(f"Encoding error: {e}")
+            if vinted_id in index:
                 continue
 
-            points, rows = src.pinecone.prepare(
-                point_ids=point_ids, payloads=payloads, embeddings=embeddings
+            index.append(vinted_id)
+            image_url = row.get("image_location")
+            image = src.utils.download_image_as_pil(url=image_url)
+
+            if isinstance(image, Image.Image):
+                point_id = str(uuid.uuid4())
+
+                images.append(image)
+                payloads.append(row)
+                point_ids.append(point_id)
+
+            else:
+                to_delete_ids.append(vinted_id)
+
+            if len(point_ids) > 0 and len(point_ids) % BATCH_SIZE == 0:
+                n += len(point_ids)
+
+                try:
+                    embeddings = encoder.encode_images(images)
+                except Exception as e:
+                    print(f"Encoding error: {e}")
+                    continue
+
+                points, rows = src.pinecone.prepare(
+                    point_ids=point_ids, payloads=payloads, embeddings=embeddings
+                )
+
+                n_success += upload(points, rows)
+
+                point_ids, images, payloads = [], [], []
+                gc.collect()
+
+            success_rate = 0 if n == 0 else n_success / n
+
+            loop.set_description(
+                f"Success rate: {success_rate:.2f} | "
+                f"Processed: {n} | "
+                f"Inserted: {n_success} | "
             )
 
-            n_success += upload(points, rows)
+        if len(to_delete_ids) > 0:
+            to_delete_ids = ", ".join([f"'{vinted_id}'" for vinted_id in to_delete_ids])
+            conditions = f"vinted_id IN ({to_delete_ids})"
 
-            point_ids, images, payloads = [], [], []
-            gc.collect()
-
-        success_rate = 0 if n == 0 else n_success / n
-
-        loop.set_description(
-            f"Success rate: {success_rate:.2f} | "
-            f"Processed: {n} | "
-            f"Inserted: {n_success} | "
-        )
-
-    if len(to_delete_ids) > 0:
-        to_delete_ids = ", ".join([f"'{vinted_id}'" for vinted_id in to_delete_ids])
-        conditions = f"vinted_id IN ({to_delete_ids})"
-
-        if src.bigquery.delete(
-            client=bq_client, table_id=src.enums.ITEM_TABLE_ID, conditions=conditions
-        ):
-            print(f"Deleted {len(to_delete_ids)} items from {src.enums.ITEM_TABLE_ID}")
+            if src.bigquery.delete(
+                client=bq_client,
+                table_id=src.enums.ITEM_TABLE_ID,
+                conditions=conditions,
+            ):
+                print(
+                    f"Deleted {len(to_delete_ids)} items from {src.enums.ITEM_TABLE_ID}"
+                )
 
 
 if __name__ == "__main__":
-    category_type = parse_args()    
+    category_type = parse_args()
     main(category_type)

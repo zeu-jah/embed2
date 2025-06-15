@@ -8,9 +8,9 @@ from .enums import *
 
 
 BASE_QUERY = f"""
-SELECT 
-item.*, 
+SELECT item.*, c.score
 FROM `{PROJECT_ID}.{DATASET_ID}.{ITEM_ACTIVE_TABLE_ID}` item
+INNER JOIN `{PROJECT_ID}.{DATASET_ID}.{CATALOG_TABLE_ID}` AS c USING (catalog_id)
 LEFT JOIN `{PROJECT_ID}.{DATASET_ID}.{PINECONE_TABLE_ID}` AS p ON item.id = p.item_id
 LEFT JOIN `{PROJECT_ID}.{DATASET_ID}.{SOLD_TABLE_ID}` AS s USING (vinted_id)
 WHERE p.item_id IS NULL AND s.vinted_id IS NULL
@@ -32,11 +32,13 @@ def load_items_to_embed(
     shuffle: bool = False,
     n: Optional[int] = None,
     category_type: Optional[CategoryType] = None,
+    catalog_score: Optional[int] = None,
 ) -> bigquery.table.RowIterator:
     query = _query_items_to_embed(
         shuffle=shuffle,
         n=n,
         category_type=category_type,
+        catalog_score=catalog_score,
     )
 
     return client.query(query).result()
@@ -74,22 +76,25 @@ def delete(client: bigquery.Client, table_id: str, conditions: List[str]) -> boo
     except Exception as e:
         print(e)
         return False
-    
+
 
 def _query_items_to_embed(
     shuffle: bool = False,
     n: Optional[int] = None,
     category_type: Optional[CategoryType] = None,
+    catalog_score: Optional[int] = None,
 ) -> str:
-    base_query = _build_base_query(category_type)
+    base_query = _build_base_query(category_type, catalog_score)
 
-    if category_type is not None:
-        return _build_single_category_query(base_query, shuffle, n)
+    if category_type is not None or catalog_score is not None:
+        return _build_simple_query(base_query, shuffle, n)
     else:
         return _build_weighted_category_query(base_query, shuffle, n)
 
 
-def _build_base_query(category_type: Optional[CategoryType] = None) -> str:
+def _build_base_query(
+    category_type: Optional[CategoryType] = None, catalog_score: Optional[int] = None
+) -> str:
     query = BASE_QUERY
 
     if category_type is not None:
@@ -100,12 +105,13 @@ def _build_base_query(category_type: Optional[CategoryType] = None) -> str:
         )
         query += f" AND category_type IN ({category_types})"
 
+    if catalog_score is not None:
+        query += f" AND c.score = {catalog_score}"
+
     return query
 
 
-def _build_single_category_query(
-    base_query: str, shuffle: bool, n: Optional[int] = None
-) -> str:
+def _build_simple_query(base_query: str, shuffle: bool, n: Optional[int] = None) -> str:
     query = base_query
 
     if shuffle:
@@ -148,7 +154,7 @@ def _build_weighted_category_query(
     END as category_weight
     FROM base_items
     """
-    
+
     query = f"""
     WITH 
         base_items AS ({base_query}),

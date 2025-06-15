@@ -3,13 +3,7 @@ from pydantic import BaseModel, Field
 
 
 CategoryType = Literal[
-    "top",
-    "accessories",
-    "bottom",
-    "outerwear",
-    "footwear",
-    "dress",
-    "suit"
+    "top", "accessories", "bottom", "outerwear", "footwear", "dress", "suit"
 ]
 
 
