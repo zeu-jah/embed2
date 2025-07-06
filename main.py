@@ -1,6 +1,6 @@
 import sys
 
-sys.path.append("/app")
+sys.path.append("../")
 
 from typing import Dict, List, Optional
 
@@ -14,7 +14,7 @@ import src
 
 BATCH_SIZE = 128
 NUM_ITEMS = 100000
-SHUFFLE_ALPHA = 0.3
+SHUFFLE_ALPHA = .5
 CATALOG_SCORE_ALPHA = .5
 
 
@@ -99,7 +99,7 @@ def main(
     category_type: Optional[src.models.CategoryType] = None,
 ):
     global secrets
-    secrets = json.loads(os.getenv("SECRETS_JSON"))
+    secrets = src.utils.load_json("secrets.json")
 
     global bq_client, pinecone_index
     gcp_credentials = get_gcp_credentials()
