@@ -99,7 +99,7 @@ def main(
     category_type: Optional[src.models.CategoryType] = None,
 ):
     global secrets
-    secrets = src.utils.load_json("secrets.json")
+    secrets = json.loads(os.getenv("SECRETS_JSON"))
 
     global bq_client, pinecone_index
     gcp_credentials = get_gcp_credentials()
