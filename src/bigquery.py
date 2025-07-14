@@ -33,12 +33,14 @@ def load_items_to_embed(
     n: Optional[int] = None,
     category_type: Optional[CategoryType] = None,
     catalog_score: Optional[int] = None,
+    catalog_ids: Optional[List[int]] = None,
 ) -> bigquery.table.RowIterator:
     query = _query_items_to_embed(
         shuffle=shuffle,
         n=n,
         category_type=category_type,
         catalog_score=catalog_score,
+        catalog_ids=catalog_ids,
     )
 
     return client.query(query).result()
@@ -83,8 +85,9 @@ def _query_items_to_embed(
     n: Optional[int] = None,
     category_type: Optional[CategoryType] = None,
     catalog_score: Optional[int] = None,
+    catalog_ids: Optional[List[int]] = None,
 ) -> str:
-    base_query = _build_base_query(category_type, catalog_score)
+    base_query = _build_base_query(category_type, catalog_score, catalog_ids)
 
     if category_type is not None or catalog_score is not None:
         return _build_simple_query(base_query, shuffle, n)
@@ -93,7 +96,9 @@ def _query_items_to_embed(
 
 
 def _build_base_query(
-    category_type: Optional[CategoryType] = None, catalog_score: Optional[int] = None
+    category_type: Optional[CategoryType] = None,
+    catalog_score: Optional[int] = None,
+    catalog_ids: Optional[List[int]] = None,
 ) -> str:
     query = BASE_QUERY
 
@@ -107,6 +112,10 @@ def _build_base_query(
 
     if catalog_score is not None:
         query += f" AND c.score = {catalog_score}"
+
+    if catalog_ids is not None:
+        catalog_ids_str = ", ".join([str(catalog_id) for catalog_id in catalog_ids])
+        query += f" AND catalog_id IN ({catalog_ids_str})"
 
     return query
 
