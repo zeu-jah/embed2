@@ -43,9 +43,8 @@ def get_catalog_scores() -> List[int]:
 def get_dataloader(
     category_type: Optional[src.models.CategoryType] = None,
     catalog_score: Optional[int] = None,
+    shuffle: bool = False,
 ) -> bigquery.table.RowIterator:
-    shuffle = random.random() < SHUFFLE_ALPHA
-
     return src.bigquery.load_items_to_embed(
         client=bq_client,
         shuffle=shuffle,
@@ -110,7 +109,9 @@ def main(
     encoder = src.encoder.FashionCLIPEncoder(normalize=True)
 
     for catalog_score in get_catalog_scores():
-        print(f"Catalog score: {catalog_score}")
+        shuffle = random.random() < SHUFFLE_ALPHA
+
+        print(f"Catalog score: {catalog_score} | Shuffle: {shuffle}")
 
         n_success, n = 0, 0
         index, point_ids, images, payloads, to_delete_ids = [], [], [], [], []
